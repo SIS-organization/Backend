@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# PEP 8 (E, W), erori (F), importuri sortate (I), nume (N), sintaxă modernă (UP), bug-uri (B)
+select = ["E", "W", "F", "I", "N", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
