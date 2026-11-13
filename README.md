@@ -1,7 +1,7 @@
 # ProiectIP-Echipa2_Campus-Sports-Booking-Backend
 
 Backend pentru rezervarea facilităților sportive USV (FastAPI + PostgreSQL).
-Cerința 3.6 (IP Laborator 6): aplicația de bază cu **operații CRUD pentru entitatea `Booking`**.
+Aplicația de bază cu **operații CRUD pentru entitatea `Booking`**.
 
 ## Cerințe
 
