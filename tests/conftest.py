@@ -46,6 +46,8 @@ def _test_database_url() -> str:
 TEST_URL = _test_database_url()
 # Setat ÎNAINTE de importul aplicației, ca engine-ul să folosească baza de test.
 os.environ["DATABASE_URL"] = TEST_URL
+# Cheia JWT de test (minim 32 de caractere); .env-ul real nu este necesar.
+os.environ.setdefault("JWT_SECRET", "cheie-jwt-doar-pentru-teste-" + "x" * 20)
 
 from fastapi.testclient import TestClient  # noqa: E402
 

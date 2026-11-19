@@ -21,7 +21,13 @@ Aplicația de bază cu **operații CRUD pentru entitatea `Booking`**.
    Dacă ai deja baza creată și vrei să păstrezi datele, rulează doar scripturile din
    `database/migrations/` (de exemplu `2026-11-19_booking_cancellation.sql`, care adaugă
    motivul și autorul anulării).
-3. **Configurare** — copiază `.env.example` ca `.env` și pune parola ta de PostgreSQL.
+3. **Configurare** — copiază `.env.example` ca `.env`, pune parola ta de PostgreSQL și
+   o cheie secretă pentru JWT (**obligatorie**, minim 32 de caractere; fără ea aplicația nu pornește):
+   ```
+   python -c "import secrets; print(secrets.token_urlsafe(48))"
+   ```
+   Rezultatul îl pui în `.env` la `JWT_SECRET=`. Cheia nu se urcă pe GitHub și e diferită pe fiecare mediu.
+   După un `git pull`, rulează `pip install -r requirements-dev.txt` (a apărut PyJWT).
 4. **Pornire server**
    ```
    uvicorn app.main:app --reload
@@ -41,13 +47,15 @@ Verificarea stilului (PEP 8): `ruff check .` și `ruff format --check .`
 
 ## API (prefix `/v1`)
 
-Până la autentificarea JWT (Epic 3), utilizatorul este identificat prin antetul
-`X-User-Id` (id din `users`; în datele de test: 1 Andrei, 2 Daria, 3 Elena,
-4 Administrator, 5 Vlad).
+Autentificarea cu SSO (`/auth/sso/*`) emite deja JWT-uri. Până la KAN-21 (verificarea JWT pe
+endpoint-uri), restul API-ului identifică utilizatorul prin antetul `X-User-Id` (id din `users`;
+în datele de test: 1 Andrei, 2 Daria, 3 Elena, 4 Administrator, 5 Vlad).
 
 | Metodă | Cale | Descriere |
 |---|---|---|
 | GET | `/health` | Starea aplicației și a bazei de date (public) |
+| GET | `/auth/sso/login?redirectTo=/facilitati` | Pornește autentificarea SSO: redirect 302 către furnizorul SSO (public) |
+| GET | `/auth/sso/callback?code=&state=` | Încheie autentificarea: utilizatorul local cu rolul corect + JWT (public) |
 | GET | `/facilities?q=&sport=&amenities=&date=&includeUnavailable=&page=&pageSize=` | Catalogul de facilități, cu filtre, stare și „următorul interval liber" |
 | GET | `/facilities/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` | Calendarul pe zile și ore (`free`, `booked`, `university_course`, `university_event`, `maintenance`, `past`, `closed`); implicit 7 zile de azi, maximum 14 |
 | POST | `/bookings` | Creează rezervare (201, antet `Location`) |
@@ -64,6 +72,37 @@ Exemplu de creare:
 POST /v1/bookings        (antet: X-User-Id: 1)
 { "facilityId": 3, "startTime": "2030-01-08T10:00:00+02:00", "endTime": "2030-01-08T11:00:00+02:00" }
 ```
+
+### Autentificare cu SSO (KAN-19)
+
+Fluxul este OpenID Connect, *Authorization Code + PKCE*, ca în Swagger:
+
+1. `GET /auth/sso/login` generează un `state` semnat și `code_challenge` (PKCE) și redirecționează (302) la SSO.
+2. SSO autentifică utilizatorul și îl trimite la `SSO_REDIRECT_URI` cu `code` și `state`.
+3. `GET /auth/sso/callback` verifică `state`, schimbă `code` pe identitate (cu PKCE), creează sau actualizează
+   utilizatorul local și întoarce `{accessToken, refreshToken, tokenType, expiresIn, user}`.
+
+**SSO-ul real al universității nu este disponibil**, deci se folosește un furnizor **simulat** (`SSO_MODE=mock`, implicit),
+cu același flux și aceeași logică de roluri. Încearcă-l: deschide în browser
+`http://localhost:8000/v1/auth/sso/login`, alege un cont din lista „universității” și vei vedea JSON-ul cu `user.role` și
+JWT-ul. Conturile simulate acoperă: student existent și student nou (contul se creează la prima autentificare),
+cadru didactic, administrator, cont dezactivat (403) și cont fără afiliere USV (403). Furnizorul simulat este
+pentru dezvoltare și demo, nu pentru producție; când universitatea oferă datele de conectare, se adaugă un
+furnizor OIDC în `app/services/sso/` (restul codului rămâne neschimbat).
+
+**Rolul** se recunoaște din identitatea instituțională (`app/services/sso/roles.py`): afilierea trimisă de SSO
+(`faculty`/`employee`/`staff` → cadru didactic, `student` → student), iar dacă lipsește, domeniul e-mailului
+(`@student.usv.ro` → student, `@usv.ro` → cadru didactic). Altfel contul nu este eligibil (403
+`ACCOUNT_NOT_ELIGIBLE`). Rolul `administrator` nu se atribuie niciodată automat: îl păstrează doar conturile marcate
+astfel în baza de date.
+
+**JWT**: semnat HS256 cu `JWT_SECRET`; claim-uri `sub` (id utilizator), `role`, `exp` (+ `iat`, `token_use`);
+valabilitate 60 de minute (`JWT_ACCESS_TTL_MINUTES`). Fiecare tip de token (acces, reînnoire, `state`, cod SSO) are o cheie
+derivată proprie, deci nu pot fi folosite unul în locul altuia. `refreshToken` este emis, dar `/auth/refresh` și
+`/auth/logout` nu sunt implementate încă.
+
+Setări opționale în `.env`: `SSO_MODE`, `SSO_REDIRECT_URI` (implicit callback-ul backend-ului; pentru frontend,
+ruta lui care apelează `/auth/sso/callback`), `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`.
 
 ### Reguli de rezervare
 
@@ -91,11 +130,11 @@ Format RFC 7807 (`application/problem+json`) cu câmpul `code`:
 ```
 app/
   main.py            aplicația, CORS, tratarea erorilor
-  core/              configurare, conexiune DB, erori, ore locale
+  core/              configurare, conexiune DB, erori, ore locale, JWT (security.py)
   models/            tabelele (SQLAlchemy)
   schemas/           formatul JSON (Pydantic)
   repositories/      interogările SQL
-  services/          regulile de business
+  services/          regulile de business (sso/: furnizori SSO, PKCE, roluri)
   routers/           endpoint-urile HTTP
 database/            schema.sql, seed.sql, migrations/ (modificări pentru baze existente)
 tests/               teste pytest pe PostgreSQL
@@ -111,4 +150,5 @@ Fluxul unei cereri: **router → service → repository → model**.
 - Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Cota lunară (`/users/me/quota`), lista de așteptare și eliberarea anticipată nu sunt implementate încă, deci `quotaRestored` este mereu `false`, `waitlistAvailable` este `false`, iar `usesIncludedQuota` nu este returnat. QR-ul și plățile au fost scoase din proiect (la fel în Swagger-ul actualizat).
 - Anularea salvează motivul (`cancelReason`, max. 300 de caractere, opțional) și autorul (`cancelledBy`: `user` sau `administrator`) în coloanele `cancel_reason` și `cancelled_by` din `bookings`. `canReleaseEarly`, `replacedBookingId` și `quotaRefunded` nu sunt returnate.
 - `PATCH /users/me` modifică numele (nu există coloană pentru `mobileNumber`); `GET /users/me` nu returnează `faculty`, `department`, `campus`, `mobileNumber`.
-- Autentificarea este provizorie (antetul `X-User-Id`), nu JWT.
+- Endpoint-urile (în afara `/auth/sso/*` și `/health`) se autentifică încă provizoriu prin `X-User-Id`, până la KAN-21.
+- Autentificare: sunt implementate doar `/auth/sso/login` și `/auth/sso/callback` (cu SSO simulat). Lipsesc `/auth/refresh`, `/auth/logout` și login-ul extern (KAN-20). Răspunsul callback-ului are în plus `redirectTo` (ruta cerută la login).

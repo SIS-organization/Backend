@@ -11,9 +11,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.routers import (
+    auth_router,
     booking_router,
     facility_router,
     health_router,
+    sso_mock_router,
     user_router,
 )
 
@@ -101,11 +103,16 @@ def create_app() -> FastAPI:
 
     for router_module in (
         health_router,
+        auth_router,
         facility_router,
         booking_router,
         user_router,
     ):
         app.include_router(router_module.router, prefix="/v1")
+
+    # Furnizorul SSO simulat există doar în modul `mock` (dezvoltare / demo).
+    if settings.sso_mode == "mock":
+        app.include_router(sso_mock_router.router, prefix="/v1")
 
     return app
 
