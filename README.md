@@ -51,6 +51,8 @@ Până la autentificarea JWT (Epic 3), utilizatorul este identificat prin antetu
 | GET | `/bookings/{id}` | Detalii rezervare |
 | PATCH | `/bookings/{id}` | Mută rezervarea în alt interval |
 | POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric) |
+| GET | `/users/me` | Profilul utilizatorului curent (id, nume, e-mail, rol) |
+| PATCH | `/users/me` | Actualizează `firstName` și/sau `lastName` (rolul și e-mailul nu se schimbă) |
 
 Exemplu de creare:
 

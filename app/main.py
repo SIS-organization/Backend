@@ -10,7 +10,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
-from app.routers import booking_router, facility_router, health_router
+from app.routers import (
+    booking_router,
+    facility_router,
+    health_router,
+    user_router,
+)
 
 PROBLEM_JSON = "application/problem+json"
 
@@ -84,7 +89,12 @@ def create_app() -> FastAPI:
         code = "NOT_FOUND" if exc.status_code == 404 else "HTTP_ERROR"
         return _problem(request, exc.status_code, title, code, str(exc.detail))
 
-    for router_module in (health_router, facility_router, booking_router):
+    for router_module in (
+        health_router,
+        facility_router,
+        booking_router,
+        user_router,
+    ):
         app.include_router(router_module.router, prefix="/v1")
 
     return app
