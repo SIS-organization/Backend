@@ -13,7 +13,7 @@ from app.core.exceptions import (
 )
 from app.core.time import now_local, to_local_naive
 from app.models import Booking, BookingStatus, User, UserRole
-from app.models.enums import BlockReason
+from app.models.enums import BlockReason, CancellationSource
 from app.repositories.blocked_slot_repository import BlockedSlotRepository
 from app.repositories.booking_repository import BookingRepository, BookingScope
 from app.repositories.facility_repository import FacilityRepository
@@ -116,6 +116,8 @@ class BookingService:
                 if booking.status == BookingStatus.CANCELLED
                 else None
             ),
+            cancelled_by=booking.cancelled_by,
+            cancel_reason=booking.cancel_reason,
             cancellable_until=cancellable_until,
             can_cancel=cancellable_until is not None
             and now_local() <= cancellable_until,
@@ -152,7 +154,7 @@ class BookingService:
         return self._reload(booking.id)
 
     # ---------- DELETE (anulare = "soft delete") ----------
-    def cancel(self, user: User, booking_id: int) -> Booking:
+    def cancel(self, user: User, booking_id: int, reason: str | None = None) -> Booking:
         booking = self.get(user, booking_id)
         self._ensure_active(booking, code="BOOKING_NOT_CANCELLABLE_IN_STATE")
         self._ensure_notice(
@@ -162,6 +164,12 @@ class BookingService:
         )
 
         booking.status = BookingStatus.CANCELLED
+        # Un administrator care anulează rezervarea altcuiva apare ca atare.
+        by_admin = user.role == UserRole.ADMINISTRATOR and booking.user_id != user.id
+        booking.cancelled_by = (
+            CancellationSource.ADMINISTRATOR if by_admin else CancellationSource.USER
+        )
+        booking.cancel_reason = (reason or "").strip() or None
         self.db.commit()
         return self._reload(booking.id)
 

@@ -2,11 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, text
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.enums import BookingStatus, pg_enum
+from app.models.enums import BookingStatus, CancellationSource, pg_enum
 from app.models.facility import Facility
 from app.models.mixins import TimestampMixin
 from app.models.user import User
@@ -27,6 +27,10 @@ class Booking(TimestampMixin, Base):
         server_default=text("'confirmed'"),
     )
     early_released_at: Mapped[datetime | None] = mapped_column(DateTime)
+    cancelled_by: Mapped[CancellationSource | None] = mapped_column(
+        pg_enum(CancellationSource, "cancellation_source")
+    )
+    cancel_reason: Mapped[str | None] = mapped_column(String(300))
 
     user: Mapped[User] = relationship()
     facility: Mapped[Facility] = relationship()

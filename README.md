@@ -18,6 +18,9 @@ Aplicația de bază cu **operații CRUD pentru entitatea `Booking`**.
    ```
 2. **Baza de date** — în pgAdmin creează baza `db_campus_sports`, apoi în *Query Tool* rulează,
    pe rând, `database/schema.sql` și `database/seed.sql`.
+   Dacă ai deja baza creată și vrei să păstrezi datele, rulează doar scripturile din
+   `database/migrations/` (de exemplu `2026-11-19_booking_cancellation.sql`, care adaugă
+   motivul și autorul anulării).
 3. **Configurare** — copiază `.env.example` ca `.env` și pune parola ta de PostgreSQL.
 4. **Pornire server**
    ```
@@ -94,7 +97,7 @@ app/
   repositories/      interogările SQL
   services/          regulile de business
   routers/           endpoint-urile HTTP
-database/            schema.sql, seed.sql
+database/            schema.sql, seed.sql, migrations/ (modificări pentru baze existente)
 tests/               teste pytest pe PostgreSQL
 ```
 
@@ -105,6 +108,7 @@ Fluxul unei cereri: **router → service → repository → model**.
 - Id-urile sunt numere întregi (în Swagger: UUID).
 - Facilitatea are `type` și `capacity` (4 culoare la bazin); intervalele din calendar au `capacity` și `freeSpots`.
 - `sports` și `amenities` sunt deduse din tipul facilității (`app/services/facility_catalog.py`).
-- Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Lipsesc: cota lunară (`/users/me/quota`), lista de așteptare, QR, plăți, eliberarea anticipată, deci `quotaRestored` este mereu `false`, iar câmpurile `usesIncludedQuota`, `qrAvailable`, `payment` ș.a. nu sunt returnate.
+- Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Cota lunară (`/users/me/quota`), lista de așteptare și eliberarea anticipată nu sunt implementate încă, deci `quotaRestored` este mereu `false`, `waitlistAvailable` este `false`, iar `usesIncludedQuota` nu este returnat. QR-ul și plățile au fost scoase din proiect (la fel în Swagger-ul actualizat).
+- Anularea salvează motivul (`cancelReason`, max. 300 de caractere, opțional) și autorul (`cancelledBy`: `user` sau `administrator`) în coloanele `cancel_reason` și `cancelled_by` din `bookings`. `canReleaseEarly`, `replacedBookingId` și `quotaRefunded` nu sunt returnate.
 - `PATCH /users/me` modifică numele (nu există coloană pentru `mobileNumber`); `GET /users/me` nu returnează `faculty`, `department`, `campus`, `mobileNumber`.
 - Autentificarea este provizorie (antetul `X-User-Id`), nu JWT.

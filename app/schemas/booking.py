@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import Field, field_serializer
 
 from app.core.time import to_api
-from app.models.enums import BookingStatus, UserRole
+from app.models.enums import BookingStatus, CancellationSource, UserRole
 from app.schemas.common import CamelModel, PageMeta
 from app.schemas.facility import FacilitySummary
 
@@ -52,6 +52,8 @@ class BookingOut(CamelModel):
     duration_minutes: int
     status: BookingStatus
     cancelled_at: datetime | None = None
+    cancelled_by: CancellationSource | None = None
+    cancel_reason: str | None = None
     cancellable_until: datetime | None = None
     can_cancel: bool
     early_released_at: datetime | None = None

@@ -8,7 +8,7 @@
 -- =====================================================================
 
 DROP TABLE IF EXISTS waitlist_notifications, blocked_slots, bookings, facilities, users CASCADE;
-DROP TYPE IF EXISTS user_role, facility_type, booking_status, block_reason CASCADE;
+DROP TYPE IF EXISTS user_role, facility_type, booking_status, block_reason, cancellation_source CASCADE;
 DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
 
 -- ---------- Tipuri enumerate ----------
@@ -17,6 +17,9 @@ CREATE TYPE facility_type  AS ENUM ('football_field', 'gym', 'swimming_pool', 's
 CREATE TYPE booking_status AS ENUM ('confirmed', 'cancelled', 'completed');
 CREATE TYPE block_reason   AS ENUM ('university_course', 'university_event', 'maintenance',
                                     'repair', 'cleaning', 'other');
+-- Cine a anulat o rezervare (valorile din Swagger, fără plăți).
+CREATE TYPE cancellation_source AS ENUM ('user', 'administrator', 'maintenance',
+                                         'university_activity', 'system');
 
 -- ---------- Actualizare automată a coloanei updated_at ----------
 CREATE FUNCTION set_updated_at() RETURNS trigger AS $$
@@ -60,6 +63,8 @@ CREATE TABLE bookings (
     end_time          timestamp      NOT NULL,
     status            booking_status NOT NULL DEFAULT 'confirmed',
     early_released_at timestamp,
+    cancelled_by      cancellation_source,   -- completat doar la anulare
+    cancel_reason     varchar(300),          -- motivul anulării (opțional)
     created_at        timestamp      NOT NULL DEFAULT (now() AT TIME ZONE 'Europe/Bucharest'),
     updated_at        timestamp      NOT NULL DEFAULT (now() AT TIME ZONE 'Europe/Bucharest'),
     CONSTRAINT ck_bookings_interval CHECK (end_time > start_time)

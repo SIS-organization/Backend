@@ -97,11 +97,11 @@ def cancel_booking(
     booking_id: int,
     user: CurrentUser,
     db: DbSession,
-    # Motivul este acceptat ca în Swagger, dar baza de date nu îl păstrează încă.
+    # Motivul (opțional) se salvează în `bookings.cancel_reason`.
     body: CancelRequest | None = None,
 ) -> CancelResult:
     service = BookingService(db)
-    booking = service.cancel(user, booking_id)
+    booking = service.cancel(user, booking_id, body.reason if body else None)
     return CancelResult(
         booking=service.present(booking), quota_restored=False, waitlist_notified=0
     )
