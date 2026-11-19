@@ -65,15 +65,14 @@ def test_get_me_does_not_expose_sensitive_fields(client):
     }
 
 
-def test_get_me_without_header_is_401(client):
+def test_get_me_without_token_is_401(client):
     response = client.get("/v1/users/me")
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"
 
 
-@pytest.mark.parametrize("user_id", ["999", "abc", "-1"])
-def test_get_me_with_unknown_or_invalid_id_is_401(client, user_id):
-    response = client.get("/v1/users/me", headers={"X-User-Id": user_id})
+def test_get_me_with_token_of_unknown_user_is_401(client):
+    response = client.get("/v1/users/me", headers=headers(999))
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"
 
@@ -141,7 +140,7 @@ def test_patch_me_with_invalid_body_is_400(client, payload):
     assert response.json()["code"] == "VALIDATION_ERROR"
 
 
-def test_patch_me_without_header_is_401(client):
+def test_patch_me_without_token_is_401(client):
     response = client.patch("/v1/users/me", json={"firstName": "Alex"})
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"

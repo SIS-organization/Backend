@@ -139,7 +139,7 @@ def test_university_activity_and_closed_status(client, db):
     assert items[1]["nextFreeSlot"] is None
 
 
-def test_facilities_require_user_header(client):
+def test_facilities_require_authentication(client):
     response = client.get("/v1/facilities")
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"

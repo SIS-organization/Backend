@@ -47,9 +47,13 @@ Verificarea stilului (PEP 8): `ruff check .` și `ruff format --check .`
 
 ## API (prefix `/v1`)
 
-Autentificarea cu SSO (`/auth/sso/*`) emite deja JWT-uri. Până la KAN-21 (verificarea JWT pe
-endpoint-uri), restul API-ului identifică utilizatorul prin antetul `X-User-Id` (id din `users`;
-în datele de test: 1 Andrei, 2 Daria, 3 Elena, 4 Administrator, 5 Vlad).
+Toate endpoint-urile cer antetul `Authorization: Bearer <JWT>`, **în afară de** `/health` și `/auth/sso/*`
+(publice). Fără token valid răspunsul este `401`; cu token valid, dar fără rolul potrivit, `403`
+(vezi „Protejarea endpoint-urilor după rol”).
+
+**Cum obții un JWT ca să testezi:** deschide `http://localhost:8000/v1/auth/sso/login`, alege un cont
+(student, cadru didactic sau administrator) și copiază `accessToken` din JSON. În Swagger UI
+(`/docs`) apasă **Authorize** și lipește token-ul. Token-ul expiră în 60 de minute.
 
 | Metodă | Cale | Descriere |
 |---|---|---|
@@ -65,11 +69,12 @@ endpoint-uri), restul API-ului identifică utilizatorul prin antetul `X-User-Id`
 | POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric); răspuns `{booking, quotaRestored, waitlistNotified}` |
 | GET | `/users/me` | Profilul utilizatorului curent |
 | PATCH | `/users/me` | Actualizează `firstName` și/sau `lastName` (rolul și e-mailul nu se schimbă) |
+| orice | `/admin/*` | Doar administratori: `401` fără autentificare, `403` pentru ceilalți (încă fără endpoint-uri, vezi mai jos) |
 
 Exemplu de creare:
 
 ```json
-POST /v1/bookings        (antet: X-User-Id: 1)
+POST /v1/bookings        (antet: Authorization: Bearer <JWT>)
 { "facilityId": 3, "startTime": "2030-01-08T10:00:00+02:00", "endTime": "2030-01-08T11:00:00+02:00" }
 ```
 
@@ -103,6 +108,28 @@ derivată proprie, deci nu pot fi folosite unul în locul altuia. `refreshToken`
 
 Setări opționale în `.env`: `SSO_MODE`, `SSO_REDIRECT_URI` (implicit callback-ul backend-ului; pentru frontend,
 ruta lui care apelează `/auth/sso/callback`), `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`.
+
+### Protejarea endpoint-urilor după rol (KAN-21)
+
+Fiecare cerere trece prin `get_current_user` (`app/routers/dependencies.py`), care verifică JWT-ul:
+
+| Situație | Răspuns |
+|---|---|
+| fără antet `Authorization`, schemă diferită de `Bearer`, token alterat, expirat, semnat cu altă cheie, de alt tip (de exemplu cel de reînnoire) sau al unui utilizator care nu mai există | `401` `UNAUTHENTICATED` (cu antetul `WWW-Authenticate: Bearer`) |
+| token valid, dar rolul nu are voie | `403` `FORBIDDEN` |
+| token valid și rol permis | cererea se execută |
+
+* **Rolul se citește din baza de date**, nu din token. Un token care pretinde `administrator` nu dă drepturi
+  unui student, iar un administrator retrogradat pierde accesul imediat, chiar dacă token-ul lui n-a expirat.
+* **`/admin/*` este doar pentru administratori.** Garda (`require_admin`) este pusă pe routerul `/admin`
+  (`app/routers/admin_router.py`), nu pe fiecare endpoint: orice endpoint de administrare adăugat acolo
+  (Epic 9) este protejat automat. Până atunci, orice cale `/admin/...` răspunde `401` fără token, `403`
+  unui ne-administrator (chiar și pe o cale care nu există, ca să nu aflăm ce există) și `404` unui administrator.
+* **Alte reguli pe rol** se declară cu `Depends(require_roles(UserRole.PROFESSOR, UserRole.ADMINISTRATOR))`.
+* **Endpoint-urile publice** sunt doar `/health`, `/auth/sso/login` și `/auth/sso/callback`. Un endpoint nou
+  este protejat implicit (dacă declară `CurrentUser`); `tests/test_authorization.py` parcurge toate rutele
+  din Swagger și pică dacă una nouă rămâne neprotejată din greșeală.
+* Antetul provizoriu `X-User-Id` a fost **eliminat**: oricine ar fi putut pretinde că e administrator.
 
 ### Reguli de rezervare
 
@@ -142,7 +169,7 @@ tests/               teste pytest pe PostgreSQL
 
 Fluxul unei cereri: **router → service → repository → model**.
 
-## Diferențe față de Swagger (baza de date a fost modificată după el)
+##
 
 - Id-urile sunt numere întregi (în Swagger: UUID).
 - Facilitatea are `type` și `capacity` (4 culoare la bazin); intervalele din calendar au `capacity` și `freeSpots`.
@@ -150,5 +177,4 @@ Fluxul unei cereri: **router → service → repository → model**.
 - Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Cota lunară (`/users/me/quota`), lista de așteptare și eliberarea anticipată nu sunt implementate încă, deci `quotaRestored` este mereu `false`, `waitlistAvailable` este `false`, iar `usesIncludedQuota` nu este returnat. QR-ul și plățile au fost scoase din proiect (la fel în Swagger-ul actualizat).
 - Anularea salvează motivul (`cancelReason`, max. 300 de caractere, opțional) și autorul (`cancelledBy`: `user` sau `administrator`) în coloanele `cancel_reason` și `cancelled_by` din `bookings`. `canReleaseEarly`, `replacedBookingId` și `quotaRefunded` nu sunt returnate.
 - `PATCH /users/me` modifică numele (nu există coloană pentru `mobileNumber`); `GET /users/me` nu returnează `faculty`, `department`, `campus`, `mobileNumber`.
-- Endpoint-urile (în afara `/auth/sso/*` și `/health`) se autentifică încă provizoriu prin `X-User-Id`, până la KAN-21.
 - Autentificare: sunt implementate doar `/auth/sso/login` și `/auth/sso/callback` (cu SSO simulat). Lipsesc `/auth/refresh`, `/auth/logout` și login-ul extern (KAN-20). Răspunsul callback-ului are în plus `redirectTo` (ruta cerută la login).

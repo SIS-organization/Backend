@@ -182,7 +182,7 @@ def test_unknown_facility_is_404(client):
     assert get(client, 999).status_code == 404
 
 
-def test_requires_user_header(client):
+def test_requires_authentication(client):
     response = client.get(URL.format(TEREN))
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"

@@ -51,7 +51,7 @@ def test_utc_input_is_converted_to_local_time(client):
     assert response.json()["startTime"] == "2030-01-08T10:00:00+02:00"
 
 
-def test_requires_user_header(client):
+def test_requires_authentication(client):
     body = {"facilityId": TEREN, **slot()}
     response = client.post("/v1/bookings", json=body)
     assert response.status_code == 401
