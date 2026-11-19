@@ -68,7 +68,11 @@ def test_cancel_sets_status_cancelled(client, db):
     booking = make_booking(db, start=datetime(2030, 1, 8, 10))
     response = client.post(f"/v1/bookings/{booking.id}/cancel", headers=headers(ANDREI))
     assert response.status_code == 200
-    assert response.json()["status"] == "cancelled"
+    body = response.json()
+    assert body["booking"]["status"] == "cancelled"
+    assert body["booking"]["canCancel"] is False
+    assert body["booking"]["cancelledAt"] is not None
+    assert body["quotaRestored"] is False and body["waitlistNotified"] == 0
     # rămâne în istoric (soft delete)
     history = client.get("/v1/bookings?scope=history", headers=headers(ANDREI)).json()
     assert history["totalItems"] == 1
@@ -93,7 +97,7 @@ def test_cancel_twice_is_conflict(client, db):
     assert client.post(url, headers=headers(ANDREI)).status_code == 200
     response = client.post(url, headers=headers(ANDREI))
     assert response.status_code == 409
-    assert response.json()["code"] == "INVALID_BOOKING_STATE"
+    assert response.json()["code"] == "BOOKING_NOT_CANCELLABLE_IN_STATE"
 
 
 def test_cannot_cancel_someone_elses_booking(client, db):
@@ -107,3 +111,19 @@ def test_cancel_missing_booking_is_404(client):
         client.post("/v1/bookings/999/cancel", headers=headers(ANDREI)).status_code
         == 404
     )
+
+
+def test_cancel_accepts_optional_reason(client, db):
+    booking = make_booking(db, start=datetime(2030, 1, 8, 10))
+    response = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "Nu mai pot ajunge."},
+        headers=headers(ANDREI),
+    )
+    assert response.status_code == 200
+    too_long = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "x" * 301},
+        headers=headers(ANDREI),
+    )
+    assert too_long.status_code == 400

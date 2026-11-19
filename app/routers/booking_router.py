@@ -3,8 +3,9 @@
 import math
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Header, Query, Response, status
 
+from app.models import BookingStatus
 from app.repositories.booking_repository import BookingScope
 from app.routers.dependencies import CurrentUser, DbSession
 from app.schemas.booking import (
@@ -12,6 +13,8 @@ from app.schemas.booking import (
     BookingOut,
     BookingPage,
     BookingUpdate,
+    CancelRequest,
+    CancelResult,
 )
 from app.services.booking_service import BookingService
 
@@ -24,11 +27,19 @@ router = APIRouter(prefix="/bookings", tags=["Bookings"])
     status_code=status.HTTP_201_CREATED,
     summary="Creează o rezervare",
 )
-def create_booking(body: BookingCreate, user: CurrentUser, db: DbSession) -> BookingOut:
-    booking = BookingService(db).create(
-        user, body.facility_id, body.start_time, body.end_time
-    )
-    return BookingOut.model_validate(booking)
+def create_booking(
+    body: BookingCreate,
+    response: Response,
+    user: CurrentUser,
+    db: DbSession,
+    # Acceptat ca în Swagger. Un dublu-click este oprit oricum de regula
+    # „ai deja o rezervare în acest interval" (409 USER_ALREADY_BOOKED).
+    idempotency_key: Annotated[str | None, Header()] = None,
+) -> BookingOut:
+    service = BookingService(db)
+    booking = service.create(user, body.facility_id, body.start_time, body.end_time)
+    response.headers["Location"] = f"/v1/bookings/{booking.id}"
+    return service.present(booking)
 
 
 @router.get(
@@ -40,12 +51,17 @@ def list_bookings(
     user: CurrentUser,
     db: DbSession,
     scope: BookingScope = BookingScope.UPCOMING,
+    booking_status: Annotated[BookingStatus | None, Query(alias="status")] = None,
+    facility_id: Annotated[int | None, Query(alias="facilityId")] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, alias="pageSize")] = 20,
 ) -> BookingPage:
-    items, total = BookingService(db).list_for_user(user, scope, page, page_size)
+    service = BookingService(db)
+    items, total = service.list_for_user(
+        user, scope, page, page_size, booking_status, facility_id
+    )
     return BookingPage(
-        items=[BookingOut.model_validate(b) for b in items],
+        items=[service.present(b) for b in items],
         page=page,
         page_size=page_size,
         total_items=total,
@@ -55,7 +71,8 @@ def list_bookings(
 
 @router.get("/{booking_id}", response_model=BookingOut, summary="Detalii rezervare")
 def get_booking(booking_id: int, user: CurrentUser, db: DbSession) -> BookingOut:
-    return BookingOut.model_validate(BookingService(db).get(user, booking_id))
+    service = BookingService(db)
+    return service.present(service.get(user, booking_id))
 
 
 @router.patch(
@@ -66,16 +83,25 @@ def get_booking(booking_id: int, user: CurrentUser, db: DbSession) -> BookingOut
 def reschedule_booking(
     booking_id: int, body: BookingUpdate, user: CurrentUser, db: DbSession
 ) -> BookingOut:
-    booking = BookingService(db).reschedule(
-        user, booking_id, body.start_time, body.end_time
-    )
-    return BookingOut.model_validate(booking)
+    service = BookingService(db)
+    booking = service.reschedule(user, booking_id, body.start_time, body.end_time)
+    return service.present(booking)
 
 
 @router.post(
     "/{booking_id}/cancel",
-    response_model=BookingOut,
+    response_model=CancelResult,
     summary="Anulează rezervarea",
 )
-def cancel_booking(booking_id: int, user: CurrentUser, db: DbSession) -> BookingOut:
-    return BookingOut.model_validate(BookingService(db).cancel(user, booking_id))
+def cancel_booking(
+    booking_id: int,
+    user: CurrentUser,
+    db: DbSession,
+    # Motivul este acceptat ca în Swagger, dar baza de date nu îl păstrează încă.
+    body: CancelRequest | None = None,
+) -> CancelResult:
+    service = BookingService(db)
+    booking = service.cancel(user, booking_id)
+    return CancelResult(
+        booking=service.present(booking), quota_restored=False, waitlist_notified=0
+    )

@@ -15,9 +15,11 @@ class AppError(Exception):
         code: str | None = None,
         status_code: int | None = None,
         title: str | None = None,
+        extensions: dict | None = None,
     ) -> None:
         super().__init__(detail)
         self.detail = detail
+        self.extensions = extensions
         if code is not None:
             self.code = code
         if status_code is not None:
@@ -29,7 +31,7 @@ class AppError(Exception):
 class UnauthorizedError(AppError):
     status_code = 401
     title = "Unauthorized"
-    code = "UNAUTHORIZED"
+    code = "UNAUTHENTICATED"
 
 
 class ForbiddenError(AppError):

@@ -28,9 +28,13 @@ def test_get_me_returns_current_user(client):
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == ANDREI
+    assert body["name"] == "Andrei Munteanu"
     assert body["firstName"] == "Andrei"
     assert body["lastName"] == "Munteanu"
     assert body["role"] == "student"
+    assert body["identitySource"] == "sso"
+    assert body["priority"] is True
+    assert body["accessStatus"] == "active"
     assert "@" in body["email"]
     assert body["createdAt"]
 
@@ -40,16 +44,23 @@ def test_get_me_returns_the_right_user_and_role(client):
     external = client.get("/v1/users/me", headers=headers(VLAD)).json()
     assert admin["id"] == ADMIN and admin["role"] == "administrator"
     assert external["id"] == VLAD and external["role"] == "external"
+    # publicul extern nu are acces prioritar și nu vine din SSO
+    assert external["priority"] is False
+    assert external["identitySource"] == "external_email"
 
 
 def test_get_me_does_not_expose_sensitive_fields(client):
     body = client.get("/v1/users/me", headers=headers(ANDREI)).json()
     assert set(body) == {
         "id",
-        "firstName",
-        "lastName",
+        "name",
         "email",
         "role",
+        "identitySource",
+        "priority",
+        "accessStatus",
+        "firstName",
+        "lastName",
         "createdAt",
     }
 
@@ -57,14 +68,14 @@ def test_get_me_does_not_expose_sensitive_fields(client):
 def test_get_me_without_header_is_401(client):
     response = client.get("/v1/users/me")
     assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "UNAUTHENTICATED"
 
 
 @pytest.mark.parametrize("user_id", ["999", "abc", "-1"])
 def test_get_me_with_unknown_or_invalid_id_is_401(client, user_id):
     response = client.get("/v1/users/me", headers={"X-User-Id": user_id})
     assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "UNAUTHENTICATED"
 
 
 # ---------- PATCH /users/me ----------
@@ -79,6 +90,7 @@ def test_patch_me_updates_names(client, restore_users):
     assert response.status_code == 200
     assert response.json()["firstName"] == "Alex"
     assert response.json()["lastName"] == "Popescu"
+    assert response.json()["name"] == "Alex Popescu"
 
     # schimbarea rămâne salvată
     again = client.get("/v1/users/me", headers=headers(ANDREI)).json()
@@ -132,4 +144,4 @@ def test_patch_me_with_invalid_body_is_400(client, payload):
 def test_patch_me_without_header_is_401(client):
     response = client.patch("/v1/users/me", json={"firstName": "Alex"})
     assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "UNAUTHENTICATED"

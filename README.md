@@ -44,14 +44,15 @@ Până la autentificarea JWT (Epic 3), utilizatorul este identificat prin antetu
 
 | Metodă | Cale | Descriere |
 |---|---|---|
-| GET | `/health` | Starea aplicației și a bazei de date |
-| GET | `/facilities` | Lista facilităților |
-| POST | `/bookings` | Creează rezervare (201) |
-| GET | `/bookings?scope=upcoming\|history\|all&page=1&pageSize=20` | Rezervările mele |
+| GET | `/health` | Starea aplicației și a bazei de date (public) |
+| GET | `/facilities?q=&sport=&amenities=&date=&includeUnavailable=&page=&pageSize=` | Catalogul de facilități, cu filtre, stare și „următorul interval liber" |
+| GET | `/facilities/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` | Calendarul pe zile și ore (`free`, `booked`, `university_course`, `university_event`, `maintenance`, `past`, `closed`); implicit 7 zile de azi, maximum 14 |
+| POST | `/bookings` | Creează rezervare (201, antet `Location`) |
+| GET | `/bookings?scope=upcoming\|history\|all&status=&facilityId=&page=1&pageSize=20` | Rezervările mele |
 | GET | `/bookings/{id}` | Detalii rezervare |
-| PATCH | `/bookings/{id}` | Mută rezervarea în alt interval |
-| POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric) |
-| GET | `/users/me` | Profilul utilizatorului curent (id, nume, e-mail, rol) |
+| PATCH | `/bookings/{id}` | Mută rezervarea în alt interval (nu e în Swagger) |
+| POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric); răspuns `{booking, quotaRestored, waitlistNotified}` |
+| GET | `/users/me` | Profilul utilizatorului curent |
 | PATCH | `/users/me` | Actualizează `firstName` și/sau `lastName` (rolul și e-mailul nu se schimbă) |
 
 Exemplu de creare:
@@ -98,3 +99,12 @@ tests/               teste pytest pe PostgreSQL
 ```
 
 Fluxul unei cereri: **router → service → repository → model**.
+
+## Diferențe față de Swagger (baza de date a fost modificată după el)
+
+- Id-urile sunt numere întregi (în Swagger: UUID).
+- Facilitatea are `type` și `capacity` (4 culoare la bazin); intervalele din calendar au `capacity` și `freeSpots`.
+- `sports` și `amenities` sunt deduse din tipul facilității (`app/services/facility_catalog.py`).
+- Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Lipsesc: cota lunară (`/users/me/quota`), lista de așteptare, QR, plăți, eliberarea anticipată, deci `quotaRestored` este mereu `false`, iar câmpurile `usesIncludedQuota`, `qrAvailable`, `payment` ș.a. nu sunt returnate.
+- `PATCH /users/me` modifică numele (nu există coloană pentru `mobileNumber`); `GET /users/me` nu returnează `faculty`, `department`, `campus`, `mobileNumber`.
+- Autentificarea este provizorie (antetul `X-User-Id`), nu JWT.

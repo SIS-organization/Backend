@@ -1,4 +1,4 @@
-"""Scheme pentru profilul utilizatorului (ce intră și ce iese din API)."""
+"""Scheme pentru profilul utilizatorului (conform schemei `User` din Swagger)."""
 
 from datetime import datetime
 from typing import Annotated
@@ -19,10 +19,15 @@ class UserOut(CamelModel):
     """Profilul utilizatorului. Nu conține parola sau alte date sensibile."""
 
     id: int
-    first_name: str
-    last_name: str
+    name: str  # prenume + nume
     email: str
     role: UserRole
+    identity_source: str  # `sso` sau `external_email`
+    priority: bool  # acces prioritar USV (studenți și cadre didactice)
+    access_status: str
+    # Specifice bazei noastre de date (nu apar în Swagger):
+    first_name: str
+    last_name: str
     created_at: datetime
 
     @field_serializer("created_at")

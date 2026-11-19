@@ -13,6 +13,9 @@ class FacilityRepository:
     def list_all(self) -> list[Facility]:
         return list(self.db.scalars(select(Facility).order_by(Facility.id)))
 
+    def get(self, facility_id: int) -> Facility | None:
+        return self.db.get(Facility, facility_id)
+
     def get_for_update(self, facility_id: int) -> Facility | None:
         """Citește facilitatea și o blochează până la commit.
 

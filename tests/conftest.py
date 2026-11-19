@@ -78,6 +78,7 @@ def clean_bookings():
 @pytest.fixture(autouse=True)
 def fixed_now(monkeypatch):
     monkeypatch.setattr("app.services.booking_service.now_local", lambda: FAKE_NOW)
+    monkeypatch.setattr("app.services.facility_service.now_local", lambda: FAKE_NOW)
 
 
 @pytest.fixture

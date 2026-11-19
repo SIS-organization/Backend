@@ -12,6 +12,20 @@ class BlockedSlotRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def list_overlapping(
+        self, facility_id: int, start: datetime, end: datetime
+    ) -> list[BlockedSlot]:
+        """Toate intervalele blocate care se suprapun cu [start, end)."""
+        return list(
+            self.db.scalars(
+                select(BlockedSlot).where(
+                    BlockedSlot.facility_id == facility_id,
+                    BlockedSlot.start_time < end,
+                    BlockedSlot.end_time > start,
+                )
+            )
+        )
+
     def find_overlapping(
         self, facility_id: int, start: datetime, end: datetime
     ) -> BlockedSlot | None:

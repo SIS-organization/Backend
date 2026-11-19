@@ -1,19 +1,19 @@
-"""Scheme pentru rezervări (ce intră și ce iese din API)."""
+"""Scheme pentru rezervări (conform schemele `Booking` din Swagger)."""
 
 from datetime import datetime
 
-from pydantic import computed_field, field_serializer
+from pydantic import Field, field_serializer
 
 from app.core.time import to_api
-from app.models.enums import BookingStatus
+from app.models.enums import BookingStatus, UserRole
 from app.schemas.common import CamelModel, PageMeta
 from app.schemas.facility import FacilitySummary
 
 
-class UserSummary(CamelModel):
+class BookingUser(CamelModel):
     id: int
-    first_name: str
-    last_name: str
+    name: str
+    role: UserRole
 
 
 class BookingCreate(CamelModel):
@@ -22,6 +22,9 @@ class BookingCreate(CamelModel):
     facility_id: int
     start_time: datetime
     end_time: datetime
+    # Acceptate ca în Swagger, dar încă neutilizate (plata și notițele vin mai târziu).
+    allow_paid_extra: bool = False
+    notes: str | None = Field(default=None, max_length=300)
 
 
 class BookingUpdate(CamelModel):
@@ -31,24 +34,39 @@ class BookingUpdate(CamelModel):
     end_time: datetime
 
 
+class CancelRequest(CamelModel):
+    """Corpul (opțional) pentru POST /bookings/{id}/cancel."""
+
+    reason: str | None = Field(default=None, max_length=300)
+
+
 class BookingOut(CamelModel):
     """O rezervare în răspuns."""
 
     id: int
+    code: str  # cod afișat în UI, ex. USV-0108-12
     facility: FacilitySummary
-    user: UserSummary
+    user: BookingUser
     start_time: datetime
     end_time: datetime
+    duration_minutes: int
     status: BookingStatus
-    early_released_at: datetime | None
+    cancelled_at: datetime | None = None
+    cancellable_until: datetime | None = None
+    can_cancel: bool
+    early_released_at: datetime | None = None
     created_at: datetime
+    updated_at: datetime
 
-    @computed_field
-    @property
-    def duration_minutes(self) -> int:
-        return int((self.end_time - self.start_time).total_seconds() // 60)
-
-    @field_serializer("start_time", "end_time", "early_released_at", "created_at")
+    @field_serializer(
+        "start_time",
+        "end_time",
+        "cancelled_at",
+        "cancellable_until",
+        "early_released_at",
+        "created_at",
+        "updated_at",
+    )
     def _with_offset(self, value: datetime | None) -> str | None:
         local = to_api(value)
         return local.isoformat() if local else None
@@ -56,3 +74,9 @@ class BookingOut(CamelModel):
 
 class BookingPage(PageMeta):
     items: list[BookingOut]
+
+
+class CancelResult(CamelModel):
+    booking: BookingOut
+    quota_restored: bool  # cota lunară nu este implementată încă
+    waitlist_notified: int

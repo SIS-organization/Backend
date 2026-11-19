@@ -2,8 +2,8 @@
 
 from sqlalchemy.orm import Session
 
-from app.models import User
-from app.schemas.user import UserUpdate
+from app.models import User, UserRole
+from app.schemas.user import UserOut, UserUpdate
 
 
 class UserService:
@@ -20,3 +20,20 @@ class UserService:
         # `updated_at` e setat de un trigger din baza de date, deci reîncărcăm.
         self.db.refresh(user)
         return user
+
+    @staticmethod
+    def present(user: User) -> UserOut:
+        """Profilul în forma din API (cu câmpurile calculate din Swagger)."""
+        external = user.role == UserRole.EXTERNAL
+        return UserOut(
+            id=user.id,
+            name=f"{user.first_name} {user.last_name}",
+            email=user.email,
+            role=user.role,
+            identity_source="external_email" if external else "sso",
+            priority=user.role in (UserRole.STUDENT, UserRole.PROFESSOR),
+            access_status="active",
+            first_name=user.first_name,
+            last_name=user.last_name,
+            created_at=user.created_at,
+        )

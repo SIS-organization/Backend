@@ -25,15 +25,19 @@ def test_create_booking_returns_201_and_contract(client):
     assert response.status_code == 201
     body = response.json()
     assert body["id"] == 1
-    assert body["facility"] == {"id": TEREN, "name": "Teren", "location": "Campus USV"}
-    assert body["user"] == {"id": ANDREI, "firstName": "Andrei", "lastName": "Munteanu"}
+    assert body["facility"] == {"id": TEREN, "name": "Teren", "campus": "Campus USV"}
+    assert body["user"] == {"id": ANDREI, "name": "Andrei Munteanu", "role": "student"}
+    assert body["code"] == "USV-0108-1"
     assert body["startTime"] == "2030-01-08T10:00:00+02:00"
     assert body["endTime"] == "2030-01-08T11:00:00+02:00"
     assert body["durationMinutes"] == 60
     assert body["status"] == "confirmed"
     assert body["earlyReleasedAt"] is None
     assert body["createdAt"].endswith("+02:00")
-    assert "lane" not in body and "code" not in body
+    assert body["cancelledAt"] is None
+    assert body["cancellableUntil"] == "2030-01-08T08:00:00+02:00"  # start − 2 ore
+    assert body["canCancel"] is True
+    assert "lane" not in body
 
 
 def test_utc_input_is_converted_to_local_time(client):
@@ -51,7 +55,7 @@ def test_requires_user_header(client):
     body = {"facilityId": TEREN, **slot()}
     response = client.post("/v1/bookings", json=body)
     assert response.status_code == 401
-    assert response.json()["code"] == "UNAUTHORIZED"
+    assert response.json()["code"] == "UNAUTHENTICATED"
 
 
 def test_unknown_user_is_401(client):
@@ -199,6 +203,35 @@ def test_blocked_by_university_course(client, db):
     db.commit()
     response = create(client, hour=11)
     assert response.status_code == 409
-    assert response.json()["code"] == "BLOCKED_BY_UNIVERSITY_ACTIVITY"
+    assert response.json()["code"] == "SLOT_BLOCKED_BY_UNIVERSITY_ACTIVITY"
     # Un interval vecin, care nu se suprapune, rămâne liber.
     assert create(client, hour=12).status_code == 201
+
+
+def test_created_response_has_location_header(client):
+    response = create(client)
+    assert response.headers["location"] == "/v1/bookings/1"
+
+
+def test_swagger_optional_fields_are_accepted(client):
+    body = {
+        "facilityId": TEREN,
+        **slot(),
+        "allowPaidExtra": False,
+        "notes": "Aduc propriile mingi.",
+    }
+    response = client.post(
+        "/v1/bookings",
+        json=body,
+        headers={**headers(ANDREI), "Idempotency-Key": "7d6c3b9e-2a14"},
+    )
+    assert response.status_code == 201
+
+
+def test_slot_already_booked_has_waitlist_extension(client):
+    assert create(client).status_code == 201
+    response = create(client, user=DARIA)
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == "SLOT_ALREADY_BOOKED"
+    assert body["extensions"] == {"waitlistAvailable": False}

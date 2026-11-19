@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.models import BookingStatus
-from tests.conftest import ADMIN, ANDREI, DARIA, TEREN, headers, make_booking
+from tests.conftest import ADMIN, ANDREI, BAZIN, DARIA, TEREN, headers, make_booking
 
 
 def test_get_own_booking(client, db):
@@ -102,3 +102,30 @@ def test_facility_in_list_item(client, db):
     make_booking(db, facility_id=TEREN)
     item = client.get("/v1/bookings", headers=headers(ANDREI)).json()["items"][0]
     assert item["facility"]["name"] == "Teren"
+
+
+def test_list_filters_by_status_and_facility(client, db):
+    make_booking(db, facility_id=TEREN, start=datetime(2030, 1, 8, 10))
+    make_booking(db, facility_id=BAZIN, start=datetime(2030, 1, 8, 12))
+    make_booking(
+        db,
+        facility_id=TEREN,
+        start=datetime(2030, 1, 9, 10),
+        status=BookingStatus.CANCELLED,
+    )
+
+    def listing(**params):
+        response = client.get(
+            "/v1/bookings", params={"scope": "all", **params}, headers=headers(ANDREI)
+        )
+        return response.json()["totalItems"]
+
+    assert listing() == 3
+    assert listing(facilityId=TEREN) == 2
+    assert listing(status="cancelled") == 1
+    assert listing(status="cancelled", facilityId=BAZIN) == 0
+
+
+def test_invalid_status_filter_is_400(client):
+    response = client.get("/v1/bookings?status=nimic", headers=headers(ANDREI))
+    assert response.status_code == 400

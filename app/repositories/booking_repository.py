@@ -40,6 +40,8 @@ class BookingRepository:
         now: datetime,
         page: int,
         page_size: int,
+        status: BookingStatus | None = None,
+        facility_id: int | None = None,
     ) -> tuple[list[Booking], int]:
         """Rezervările unui utilizator, paginate. Returnează (elemente, total)."""
         is_upcoming = (Booking.status == BookingStatus.CONFIRMED) & (
@@ -53,6 +55,11 @@ class BookingRepository:
         else:
             query = query.order_by(Booking.start_time.desc())
 
+        if status is not None:
+            query = query.where(Booking.status == status)
+        if facility_id is not None:
+            query = query.where(Booking.facility_id == facility_id)
+
         total = self.db.scalar(select(func.count()).select_from(query.subquery()))
         items = self.db.scalars(
             query.options(joinedload(Booking.facility), joinedload(Booking.user))
@@ -60,6 +67,21 @@ class BookingRepository:
             .limit(page_size)
         ).unique()
         return list(items), total or 0
+
+    def list_active_overlapping(
+        self, facility_id: int, start: datetime, end: datetime
+    ) -> list[Booking]:
+        """Rezervările active ale unei facilități care se suprapun cu [start, end)."""
+        return list(
+            self.db.scalars(
+                select(Booking).where(
+                    Booking.facility_id == facility_id,
+                    Booking.status == BookingStatus.CONFIRMED,
+                    Booking.start_time < end,
+                    Booking.end_time > start,
+                )
+            )
+        )
 
     def count_overlapping(
         self,

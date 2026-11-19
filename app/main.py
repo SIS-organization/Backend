@@ -27,6 +27,7 @@ def _problem(
     code: str,
     detail: str,
     errors: list[dict] | None = None,
+    extensions: dict | None = None,
 ) -> JSONResponse:
     """Răspuns de eroare în format RFC 7807."""
     body: dict = {
@@ -39,6 +40,8 @@ def _problem(
     }
     if errors:
         body["errors"] = errors
+    if extensions:
+        body["extensions"] = extensions
     return JSONResponse(body, status_code=status_code, media_type=PROBLEM_JSON)
 
 
@@ -59,7 +62,14 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-        return _problem(request, exc.status_code, exc.title, exc.code, exc.detail)
+        return _problem(
+            request,
+            exc.status_code,
+            exc.title,
+            exc.code,
+            exc.detail,
+            extensions=exc.extensions,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation(

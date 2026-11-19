@@ -11,7 +11,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/me", response_model=UserOut, summary="Profilul utilizatorului curent")
 def get_me(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+    return UserService.present(user)
 
 
 @router.patch(
@@ -19,4 +19,4 @@ def get_me(user: CurrentUser) -> UserOut:
 )
 def update_me(body: UserUpdate, user: CurrentUser, db: DbSession) -> UserOut:
     updated = UserService(db).update_profile(user, body)
-    return UserOut.model_validate(updated)
+    return UserService.present(updated)
