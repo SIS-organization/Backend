@@ -73,7 +73,12 @@ def database_schema():
 def clean_bookings():
     """Fiecare test pornește fără rezervări sau blocări, cu facilitățile active."""
     with SessionLocal() as db:
-        db.execute(text("TRUNCATE bookings, blocked_slots RESTART IDENTITY CASCADE"))
+        db.execute(
+            text(
+                "TRUNCATE notifications, waitlist_entries, bookings, blocked_slots "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
         db.execute(text("UPDATE facilities SET is_active = true"))
         db.commit()
 
@@ -82,6 +87,8 @@ def clean_bookings():
 def fixed_now(monkeypatch):
     monkeypatch.setattr("app.services.booking_service.now_local", lambda: FAKE_NOW)
     monkeypatch.setattr("app.services.facility_service.now_local", lambda: FAKE_NOW)
+    monkeypatch.setattr("app.services.waitlist_service.now_local", lambda: FAKE_NOW)
+    monkeypatch.setattr("app.services.waitlist_offers.now_local", lambda: FAKE_NOW)
 
 
 @pytest.fixture

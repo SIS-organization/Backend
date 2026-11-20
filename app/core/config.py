@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     closing_time: time = time(21, 0)
     slot_minutes: int = 60
     min_cancel_notice_hours: int = 2
+    # Cât timp are utilizatorul să răspundă la oferta din lista de așteptare
+    # (cel mult până la începutul intervalului).
+    waitlist_offer_ttl_minutes: int = 30
 
     # Autentificare (JWT). Cheia vine DOAR din .env, nu are valoare implicită:
     # fără ea aplicația nu pornește, ca să nu rulăm vreodată cu o cheie cunoscută.

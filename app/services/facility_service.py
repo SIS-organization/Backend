@@ -13,6 +13,7 @@ from app.models import BlockedSlot, BlockReason, Booking, Facility, User
 from app.repositories.blocked_slot_repository import BlockedSlotRepository
 from app.repositories.booking_repository import BookingRepository
 from app.repositories.facility_repository import FacilityRepository
+from app.repositories.waitlist_repository import WaitlistRepository
 from app.schemas.availability import (
     AvailabilityOut,
     DayAvailability,
@@ -55,6 +56,7 @@ class FacilityService:
         self.facilities = FacilityRepository(db)
         self.bookings = BookingRepository(db)
         self.blocked_slots = BlockedSlotRepository(db)
+        self.waitlist = WaitlistRepository(db)
         self.settings = get_settings()
 
     # ---------- listă ----------
@@ -206,6 +208,7 @@ class FacilityService:
             facility_id, range_start, range_end
         )
         mine = [b for b in bookings if b.user_id == user.id]
+        waiting = self.waitlist.count_open_by_slot(facility_id, range_start, range_end)
 
         s = self.settings
         step = dt.timedelta(minutes=s.slot_minutes)
@@ -228,8 +231,10 @@ class FacilityService:
                         booked_by_me=any(
                             b.start_time < end and b.end_time > start for b in mine
                         ),
-                        waitlist_available=False,
-                        waitlist_count=0,
+                        # Lista de așteptare: doar pentru intervale ocupate de
+                        # rezervări (nu blocate, trecute sau libere).
+                        waitlist_available=status is SlotStatus.BOOKED,
+                        waitlist_count=waiting.get(start, 0),
                         capacity=facility.capacity,
                         free_spots=free,
                     )

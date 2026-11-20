@@ -19,6 +19,7 @@ from app.repositories.booking_repository import BookingRepository, BookingScope
 from app.repositories.facility_repository import FacilityRepository
 from app.schemas.booking import BookingOut, BookingUser
 from app.schemas.facility import FacilitySummary
+from app.services.waitlist_offers import WaitlistOffers
 
 # Motivele pentru care o facilitate nu poate fi folosită (nu e o activitate USV).
 _MAINTENANCE_REASONS = {
@@ -122,6 +123,7 @@ class BookingService:
             can_cancel=cancellable_until is not None
             and now_local() <= cancellable_until,
             early_released_at=booking.early_released_at,
+            replaced_booking_id=booking.replaced_booking_id,
             created_at=booking.created_at,
             updated_at=booking.updated_at,
         )
@@ -148,13 +150,25 @@ class BookingService:
             booking.user_id, booking.facility_id, start, end, exclude_id=booking.id
         )
 
+        old_start, old_end = booking.start_time, booking.end_time
         booking.start_time = start
         booking.end_time = end
+        if (old_start, old_end) != (start, end):
+            # Intervalul vechi s-a eliberat: îl primește lista de așteptare.
+            WaitlistOffers(self.db).offer_freed_slot(
+                booking.facility_id, old_start, old_end
+            )
         self.db.commit()
         return self._reload(booking.id)
 
     # ---------- DELETE (anulare = "soft delete") ----------
-    def cancel(self, user: User, booking_id: int, reason: str | None = None) -> Booking:
+    def cancel(
+        self, user: User, booking_id: int, reason: str | None = None
+    ) -> tuple[Booking, int]:
+        """Anulează rezervarea și oferă locul listei de așteptare (KAN-45).
+
+        Returnează rezervarea și câți utilizatori au primit oferta.
+        """
         booking = self.get(user, booking_id)
         self._ensure_active(booking, code="BOOKING_NOT_CANCELLABLE_IN_STATE")
         self._ensure_notice(
@@ -170,8 +184,11 @@ class BookingService:
             CancellationSource.ADMINISTRATOR if by_admin else CancellationSource.USER
         )
         booking.cancel_reason = (reason or "").strip() or None
+        notified = WaitlistOffers(self.db).offer_freed_slot(
+            booking.facility_id, booking.start_time, booking.end_time
+        )
         self.db.commit()
-        return self._reload(booking.id)
+        return self._reload(booking.id), notified
 
     # ---------- reguli ----------
     def _validate_slot(self, start: datetime, end: datetime) -> None:
@@ -250,8 +267,9 @@ class BookingService:
             raise ConflictError(
                 "Intervalul este deja rezervat.",
                 code="SLOT_ALREADY_BOOKED",
-                # Lista de așteptare nu este implementată încă.
-                extensions={"waitlistAvailable": False},
+                # Intervalul este ocupat de rezervări: se poate intra pe lista
+                # de așteptare (POST /waitlist).
+                extensions={"waitlistAvailable": True},
             )
 
     def _ensure_can_access(self, user: User, booking: Booking) -> None:

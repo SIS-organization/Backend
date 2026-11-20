@@ -76,7 +76,9 @@ def test_booked_slot(client, db):
     assert slots[("2030-01-08", 10)]["status"] == "booked"
     assert slots[("2030-01-08", 10)]["freeSpots"] == 0
     assert slots[("2030-01-08", 10)]["bookable"] is False
+    assert slots[("2030-01-08", 10)]["waitlistAvailable"] is True
     assert slots[("2030-01-08", 11)]["status"] == "free"
+    assert slots[("2030-01-08", 11)]["waitlistAvailable"] is False
 
 
 def test_booked_by_me_is_only_true_for_the_owner(client, db):

@@ -57,6 +57,8 @@ class BookingOut(CamelModel):
     cancellable_until: datetime | None = None
     can_cancel: bool
     early_released_at: datetime | None = None
+    # Setat când rezervarea a rezultat dintr-o mutare (lista de așteptare).
+    replaced_booking_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
