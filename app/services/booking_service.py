@@ -13,10 +13,12 @@ from app.core.exceptions import (
 )
 from app.core.time import now_local, to_local_naive
 from app.models import Booking, BookingStatus, User, UserRole
-from app.models.enums import BlockReason
+from app.models.enums import BlockReason, CancellationSource
 from app.repositories.blocked_slot_repository import BlockedSlotRepository
 from app.repositories.booking_repository import BookingRepository, BookingScope
 from app.repositories.facility_repository import FacilityRepository
+from app.schemas.booking import BookingOut, BookingUser
+from app.schemas.facility import FacilitySummary
 
 # Motivele pentru care o facilitate nu poate fi folosită (nu e o activitate USV).
 _MAINTENANCE_REASONS = {
@@ -68,9 +70,61 @@ class BookingService:
         return booking
 
     def list_for_user(
-        self, user: User, scope: BookingScope, page: int, page_size: int
+        self,
+        user: User,
+        scope: BookingScope,
+        page: int,
+        page_size: int,
+        status: BookingStatus | None = None,
+        facility_id: int | None = None,
     ) -> tuple[list[Booking], int]:
-        return self.bookings.list_for_user(user.id, scope, now_local(), page, page_size)
+        return self.bookings.list_for_user(
+            user.id, scope, now_local(), page, page_size, status, facility_id
+        )
+
+    def present(self, booking: Booking) -> BookingOut:
+        """Rezervarea în forma din API (cu câmpurile calculate din Swagger)."""
+        active = booking.status == BookingStatus.CONFIRMED
+        cancellable_until = (
+            booking.start_time - timedelta(hours=self.settings.min_cancel_notice_hours)
+            if active
+            else None
+        )
+        return BookingOut(
+            id=booking.id,
+            code=f"USV-{booking.start_time:%m%d}-{booking.id}",
+            facility=FacilitySummary(
+                id=booking.facility.id,
+                name=booking.facility.name,
+                campus=booking.facility.location,
+            ),
+            user=BookingUser(
+                id=booking.user.id,
+                name=f"{booking.user.first_name} {booking.user.last_name}",
+                role=booking.user.role,
+            ),
+            start_time=booking.start_time,
+            end_time=booking.end_time,
+            duration_minutes=int(
+                (booking.end_time - booking.start_time).total_seconds() // 60
+            ),
+            status=booking.status,
+            # Rezervarea anulată nu mai poate fi modificată, deci `updated_at`
+            # este chiar momentul anulării.
+            cancelled_at=(
+                booking.updated_at
+                if booking.status == BookingStatus.CANCELLED
+                else None
+            ),
+            cancelled_by=booking.cancelled_by,
+            cancel_reason=booking.cancel_reason,
+            cancellable_until=cancellable_until,
+            can_cancel=cancellable_until is not None
+            and now_local() <= cancellable_until,
+            early_released_at=booking.early_released_at,
+            created_at=booking.created_at,
+            updated_at=booking.updated_at,
+        )
 
     # ---------- UPDATE (mutare în alt interval) ----------
     def reschedule(
@@ -81,7 +135,7 @@ class BookingService:
         end_time: datetime,
     ) -> Booking:
         booking = self.get(user, booking_id)
-        self._ensure_active(booking)
+        self._ensure_active(booking, code="INVALID_BOOKING_STATE")
         self._ensure_notice(
             booking,
             code="MODIFICATION_WINDOW_EXPIRED",
@@ -100,9 +154,9 @@ class BookingService:
         return self._reload(booking.id)
 
     # ---------- DELETE (anulare = "soft delete") ----------
-    def cancel(self, user: User, booking_id: int) -> Booking:
+    def cancel(self, user: User, booking_id: int, reason: str | None = None) -> Booking:
         booking = self.get(user, booking_id)
-        self._ensure_active(booking)
+        self._ensure_active(booking, code="BOOKING_NOT_CANCELLABLE_IN_STATE")
         self._ensure_notice(
             booking,
             code="CANCELLATION_WINDOW_EXPIRED",
@@ -110,6 +164,12 @@ class BookingService:
         )
 
         booking.status = BookingStatus.CANCELLED
+        # Un administrator care anulează rezervarea altcuiva apare ca atare.
+        by_admin = user.role == UserRole.ADMINISTRATOR and booking.user_id != user.id
+        booking.cancelled_by = (
+            CancellationSource.ADMINISTRATOR if by_admin else CancellationSource.USER
+        )
+        booking.cancel_reason = (reason or "").strip() or None
         self.db.commit()
         return self._reload(booking.id)
 
@@ -174,7 +234,7 @@ class BookingService:
                 )
             raise ConflictError(
                 "Intervalul este ocupat de o activitate a universității.",
-                code="BLOCKED_BY_UNIVERSITY_ACTIVITY",
+                code="SLOT_BLOCKED_BY_UNIVERSITY_ACTIVITY",
             )
 
         if self.bookings.user_has_overlapping(
@@ -188,18 +248,19 @@ class BookingService:
         taken = self.bookings.count_overlapping(facility_id, start, end, exclude_id)
         if taken >= facility.capacity:
             raise ConflictError(
-                "Intervalul este deja rezervat.", code="SLOT_ALREADY_BOOKED"
+                "Intervalul este deja rezervat.",
+                code="SLOT_ALREADY_BOOKED",
+                # Lista de așteptare nu este implementată încă.
+                extensions={"waitlistAvailable": False},
             )
 
     def _ensure_can_access(self, user: User, booking: Booking) -> None:
         if booking.user_id != user.id and user.role != UserRole.ADMINISTRATOR:
             raise ForbiddenError("Nu ai acces la această rezervare.")
 
-    def _ensure_active(self, booking: Booking) -> None:
+    def _ensure_active(self, booking: Booking, code: str) -> None:
         if booking.status != BookingStatus.CONFIRMED:
-            raise ConflictError(
-                "Rezervarea nu mai este activă.", code="INVALID_BOOKING_STATE"
-            )
+            raise ConflictError("Rezervarea nu mai este activă.", code=code)
 
     def _ensure_notice(self, booking: Booking, code: str, action: str) -> None:
         """Rezervarea poate fi schimbată doar cu cel puțin N ore înainte."""

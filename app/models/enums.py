@@ -31,6 +31,16 @@ class BookingStatus(str, enum.Enum):
     COMPLETED = "completed"
 
 
+class CancellationSource(str, enum.Enum):
+    """Cine a anulat rezervarea."""
+
+    USER = "user"
+    ADMINISTRATOR = "administrator"
+    MAINTENANCE = "maintenance"
+    UNIVERSITY_ACTIVITY = "university_activity"
+    SYSTEM = "system"
+
+
 class BlockReason(str, enum.Enum):
     """Motivul unei blocări de interval."""
 

@@ -10,7 +10,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
 from app.core.exceptions import AppError
-from app.routers import booking_router, facility_router, health_router
+from app.routers import (
+    admin_router,
+    auth_router,
+    booking_router,
+    facility_router,
+    health_router,
+    sso_mock_router,
+    user_router,
+)
 
 PROBLEM_JSON = "application/problem+json"
 
@@ -22,6 +30,8 @@ def _problem(
     code: str,
     detail: str,
     errors: list[dict] | None = None,
+    extensions: dict | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Răspuns de eroare în format RFC 7807."""
     body: dict = {
@@ -34,7 +44,11 @@ def _problem(
     }
     if errors:
         body["errors"] = errors
-    return JSONResponse(body, status_code=status_code, media_type=PROBLEM_JSON)
+    if extensions:
+        body["extensions"] = extensions
+    return JSONResponse(
+        body, status_code=status_code, media_type=PROBLEM_JSON, headers=headers
+    )
 
 
 def create_app() -> FastAPI:
@@ -54,7 +68,16 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-        return _problem(request, exc.status_code, exc.title, exc.code, exc.detail)
+        return _problem(
+            request,
+            exc.status_code,
+            exc.title,
+            exc.code,
+            exc.detail,
+            extensions=exc.extensions,
+            # RFC 6750: un 401 pentru Bearer trebuie să spună schema așteptată.
+            headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation(
@@ -84,8 +107,22 @@ def create_app() -> FastAPI:
         code = "NOT_FOUND" if exc.status_code == 404 else "HTTP_ERROR"
         return _problem(request, exc.status_code, title, code, str(exc.detail))
 
-    for router_module in (health_router, facility_router, booking_router):
+    for router_module in (
+        health_router,
+        auth_router,
+        facility_router,
+        booking_router,
+        user_router,
+        admin_router,
+    ):
         app.include_router(router_module.router, prefix="/v1")
+
+    # Furnizorul SSO simulat există doar în modul `mock` (dezvoltare / demo).
+    if settings.sso_mode == "mock":
+        app.include_router(sso_mock_router.router, prefix="/v1")
+
+    # ULTIMUL: prinde orice /admin/... încă neimplementat, sub aceeași gardă.
+    app.include_router(admin_router.fallback_router, prefix="/v1")
 
     return app
 

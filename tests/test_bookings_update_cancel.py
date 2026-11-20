@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.models import BookingStatus
-from tests.conftest import ANDREI, DARIA, headers, make_booking, slot
+from tests.conftest import ADMIN, ANDREI, DARIA, headers, make_booking, slot
 
 
 def patch(client, booking_id, user=ANDREI, **slot_args):
@@ -68,7 +68,11 @@ def test_cancel_sets_status_cancelled(client, db):
     booking = make_booking(db, start=datetime(2030, 1, 8, 10))
     response = client.post(f"/v1/bookings/{booking.id}/cancel", headers=headers(ANDREI))
     assert response.status_code == 200
-    assert response.json()["status"] == "cancelled"
+    body = response.json()
+    assert body["booking"]["status"] == "cancelled"
+    assert body["booking"]["canCancel"] is False
+    assert body["booking"]["cancelledAt"] is not None
+    assert body["quotaRestored"] is False and body["waitlistNotified"] == 0
     # rămâne în istoric (soft delete)
     history = client.get("/v1/bookings?scope=history", headers=headers(ANDREI)).json()
     assert history["totalItems"] == 1
@@ -93,7 +97,7 @@ def test_cancel_twice_is_conflict(client, db):
     assert client.post(url, headers=headers(ANDREI)).status_code == 200
     response = client.post(url, headers=headers(ANDREI))
     assert response.status_code == 409
-    assert response.json()["code"] == "INVALID_BOOKING_STATE"
+    assert response.json()["code"] == "BOOKING_NOT_CANCELLABLE_IN_STATE"
 
 
 def test_cannot_cancel_someone_elses_booking(client, db):
@@ -107,3 +111,68 @@ def test_cancel_missing_booking_is_404(client):
         client.post("/v1/bookings/999/cancel", headers=headers(ANDREI)).status_code
         == 404
     )
+
+
+def test_cancel_accepts_optional_reason(client, db):
+    booking = make_booking(db, start=datetime(2030, 1, 8, 10))
+    response = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "Nu mai pot ajunge."},
+        headers=headers(ANDREI),
+    )
+    assert response.status_code == 200
+    too_long = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "x" * 301},
+        headers=headers(ANDREI),
+    )
+    assert too_long.status_code == 400
+
+
+def test_cancel_saves_reason_and_author(client, db):
+    booking = make_booking(db, start=datetime(2030, 1, 8, 10))
+    response = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "  Nu mai pot ajunge.  "},
+        headers=headers(ANDREI),
+    )
+    cancelled = response.json()["booking"]
+    assert cancelled["cancelReason"] == "Nu mai pot ajunge."
+    assert cancelled["cancelledBy"] == "user"
+    # motivul rămâne salvat și la citirea ulterioară
+    again = client.get(f"/v1/bookings/{booking.id}", headers=headers(ANDREI)).json()
+    assert again["cancelReason"] == "Nu mai pot ajunge."
+
+
+def test_cancel_without_reason_leaves_it_empty(client, db):
+    booking = make_booking(db, start=datetime(2030, 1, 8, 10))
+    for body in (None, {}, {"reason": "   "}):
+        db.expire_all()
+        booking.status = BookingStatus.CONFIRMED
+        db.commit()
+        kwargs = {"json": body} if body is not None else {}
+        response = client.post(
+            f"/v1/bookings/{booking.id}/cancel", headers=headers(ANDREI), **kwargs
+        )
+        cancelled = response.json()["booking"]
+        assert cancelled["cancelReason"] is None
+        assert cancelled["cancelledBy"] == "user"
+
+
+def test_administrator_cancelling_someone_elses_booking_is_marked(client, db):
+    booking = make_booking(db, user_id=ANDREI, start=datetime(2030, 1, 8, 10))
+    response = client.post(
+        f"/v1/bookings/{booking.id}/cancel",
+        json={"reason": "Mentenanță neprevăzută."},
+        headers=headers(ADMIN),
+    )
+    assert response.status_code == 200
+    cancelled = response.json()["booking"]
+    assert cancelled["cancelledBy"] == "administrator"
+    assert cancelled["cancelReason"] == "Mentenanță neprevăzută."
+
+
+def test_active_booking_has_no_cancellation_fields(client, db):
+    booking = make_booking(db, start=datetime(2030, 1, 8, 10))
+    body = client.get(f"/v1/bookings/{booking.id}", headers=headers(ANDREI)).json()
+    assert body["cancelReason"] is None and body["cancelledBy"] is None

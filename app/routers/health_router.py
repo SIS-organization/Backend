@@ -13,11 +13,11 @@ router = APIRouter(tags=["Health"])
 def health(db: DbSession) -> dict:
     try:
         db.execute(text("SELECT 1"))
-        database = "up"
+        database = "ok"
     except Exception:
         database = "down"
     return {
-        "status": "ok" if database == "up" else "degraded",
+        "status": "ok" if database == "ok" else "degraded",
         "version": get_settings().app_version,
         "dependencies": {"database": database},
     }

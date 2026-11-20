@@ -46,12 +46,15 @@ def _test_database_url() -> str:
 TEST_URL = _test_database_url()
 # Setat ÎNAINTE de importul aplicației, ca engine-ul să folosească baza de test.
 os.environ["DATABASE_URL"] = TEST_URL
+# Cheia JWT de test (minim 32 de caractere); .env-ul real nu este necesar.
+os.environ.setdefault("JWT_SECRET", "cheie-jwt-doar-pentru-teste-" + "x" * 20)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.core.database import SessionLocal  # noqa: E402
+from app.core.security import create_access_token  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Booking, BookingStatus  # noqa: E402
+from app.models import Booking, BookingStatus, UserRole  # noqa: E402
 
 # "Acum" fix în teste: luni, 7 ianuarie 2030, 09:00 (ora locală).
 FAKE_NOW = datetime(2030, 1, 7, 9, 0)
@@ -78,6 +81,7 @@ def clean_bookings():
 @pytest.fixture(autouse=True)
 def fixed_now(monkeypatch):
     monkeypatch.setattr("app.services.booking_service.now_local", lambda: FAKE_NOW)
+    monkeypatch.setattr("app.services.facility_service.now_local", lambda: FAKE_NOW)
 
 
 @pytest.fixture
@@ -97,8 +101,23 @@ ANDREI, DARIA, ELENA, ADMIN, VLAD = 1, 2, 3, 4, 5
 TEREN, FITNESS, BAZIN, SALA = 1, 2, 3, 4
 
 
+ROLE_OF = {
+    ANDREI: UserRole.STUDENT,
+    DARIA: UserRole.STUDENT,
+    ELENA: UserRole.PROFESSOR,
+    ADMIN: UserRole.ADMINISTRATOR,
+    VLAD: UserRole.EXTERNAL,
+}
+
+
 def headers(user_id: int) -> dict[str, str]:
-    return {"X-User-Id": str(user_id)}
+    """Antetul `Authorization: Bearer <JWT>` al unui utilizator din seed.
+
+    Un id care nu există în baza de date primește tot un token semnat corect,
+    dar serverul îl respinge cu 401 (utilizator necunoscut).
+    """
+    token = create_access_token(user_id, ROLE_OF.get(user_id, UserRole.STUDENT))
+    return {"Authorization": f"Bearer {token}"}
 
 
 def slot(day: int = 8, hour: int = 10) -> dict[str, str]:
