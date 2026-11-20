@@ -18,6 +18,7 @@ from app.routers import (
     health_router,
     sso_mock_router,
     user_router,
+    waitlist_router,
 )
 
 PROBLEM_JSON = "application/problem+json"
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
         auth_router,
         facility_router,
         booking_router,
+        waitlist_router,
         user_router,
         admin_router,
     ):

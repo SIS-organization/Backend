@@ -30,8 +30,8 @@ class SlotCell(CamelModel):
     label: str | None = None
     bookable: bool  # poate fi rezervat acum
     booked_by_me: bool
-    waitlist_available: bool  # lista de așteptare nu este implementată încă
-    waitlist_count: int
+    waitlist_available: bool  # se poate intra pe lista de așteptare
+    waitlist_count: int  # câte persoane așteaptă acest interval
     # Specifice bazei noastre de date (nu apar în Swagger):
     capacity: int  # câte rezervări simultane suportă facilitatea
     free_spots: int  # câte locuri mai sunt libere

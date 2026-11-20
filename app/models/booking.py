@@ -31,6 +31,9 @@ class Booking(TimestampMixin, Base):
         pg_enum(CancellationSource, "cancellation_source")
     )
     cancel_reason: Mapped[str | None] = mapped_column(String(300))
+    # Setat când rezervarea a rezultat dintr-o mutare (lista de așteptare):
+    # înlocuiește rezervarea indicată, nu se adaugă una nouă.
+    replaced_booking_id: Mapped[int | None] = mapped_column(ForeignKey("bookings.id"))
 
     user: Mapped[User] = relationship()
     facility: Mapped[Facility] = relationship()

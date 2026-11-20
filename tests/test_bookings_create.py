@@ -234,4 +234,4 @@ def test_slot_already_booked_has_waitlist_extension(client):
     assert response.status_code == 409
     body = response.json()
     assert body["code"] == "SLOT_ALREADY_BOOKED"
-    assert body["extensions"] == {"waitlistAvailable": False}
+    assert body["extensions"] == {"waitlistAvailable": True}

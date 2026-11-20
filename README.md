@@ -66,7 +66,13 @@ Toate endpoint-urile cer antetul `Authorization: Bearer <JWT>`, **în afară de*
 | GET | `/bookings?scope=upcoming\|history\|all&status=&facilityId=&page=1&pageSize=20` | Rezervările mele |
 | GET | `/bookings/{id}` | Detalii rezervare |
 | PATCH | `/bookings/{id}` | Mută rezervarea în alt interval (nu e în Swagger) |
-| POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric); răspuns `{booking, quotaRestored, waitlistNotified}` |
+| POST | `/bookings/{id}/cancel` | Anulează rezervarea (rămâne în istoric) și oferă locul listei de așteptare; răspuns `{booking, quotaRestored, waitlistNotified}` |
+| GET | `/waitlist?status=` | Intrările mele pe lista de așteptare (cu `position`) |
+| POST | `/waitlist` | Intră pe lista de așteptare a unui interval ocupat (201); `replaceBookingId` opțional = mutare |
+| GET | `/waitlist/{id}` | Detaliile unei intrări |
+| DELETE | `/waitlist/{id}` | Ieși de pe listă (204); dacă aveai o ofertă, trece la următorul |
+| POST | `/waitlist/{id}/accept` | Acceptă oferta: rezervarea nouă o înlocuiește pe cea veche (200, `Booking`) |
+| POST | `/waitlist/{id}/decline` | Refuză oferta („Păstrez ora”): oferta trece la următorul (204) |
 | GET | `/users/me` | Profilul utilizatorului curent |
 | PATCH | `/users/me` | Actualizează `firstName` și/sau `lastName` (rolul și e-mailul nu se schimbă) |
 | orice | `/admin/*` | Doar administratori: `401` fără autentificare, `403` pentru ceilalți (încă fără endpoint-uri, vezi mai jos) |
@@ -131,6 +137,26 @@ Fiecare cerere trece prin `get_current_user` (`app/routers/dependencies.py`), ca
   din Swagger și pică dacă una nouă rămâne neprotejată din greșeală.
 * Antetul provizoriu `X-User-Id` a fost **eliminat**: oricine ar fi putut pretinde că e administrator.
 
+### Lista de așteptare (KAN-44, KAN-45, KAN-46)
+
+1. **Înscriere** (`POST /waitlist`): doar pentru un interval **ocupat de rezervări**. Interval liber →
+   `409 SLOT_IS_FREE_BOOK_DIRECTLY`; blocat (curs, eveniment, mentenanță) → `409 WAITLIST_NOT_AVAILABLE_FOR_BLOCKED_SLOT`;
+   deja înscris → `409 ALREADY_ON_WAITLIST`; ai deja acel interval → `409 USER_ALREADY_BOOKED`. Ordinea în listă
+   este ordinea înscrierii (`position`, 1 = primul). Calendarul arată `waitlistAvailable` și `waitlistCount`.
+2. **Ofertă** (`app/services/waitlist_offers.py`): când un loc se eliberează (anulare, mutare cu `PATCH`, acceptarea
+   unei mutări), primul din listă trece în `offered` și primește o notificare în aplicație (tabela `notifications`,
+   categoria `waitlist_offer`). Fiecare loc liber se oferă unei singure persoane. Oferta e valabilă
+   `WAITLIST_OFFER_TTL_MINUTES` (implicit 30), dar cel mult până la începutul intervalului; o ofertă expirată trece
+   automat la următorul (verificat la fiecare cerere `/waitlist`).
+3. **Acceptare** (`POST /waitlist/{id}/accept`): intervalul este reverificat. Dacă e liber, se creează rezervarea nouă
+   (`replacedBookingId` = cea veche), iar cea veche este anulată: **mutarea înlocuiește, nu adaugă**, deci numărul de
+   rezervări active (cota) rămâne același. Dacă locul a fost luat între timp → `409 SLOT_NO_LONGER_AVAILABLE`,
+   rezervarea veche rămâne activă, iar utilizatorul rămâne pe listă pe același loc. Oferta expirată → `409 OFFER_EXPIRED`.
+4. **Refuz** (`POST /waitlist/{id}/decline`): rezervarea existentă rămâne, oferta trece la următorul.
+   Fără ofertă activă → `409 NO_ACTIVE_OFFER`.
+
+Bază de date existentă: rulează `database/migrations/2026-11-20_waitlist.sql`.
+
 ### Reguli de rezervare
 
 - exact 60 de minute, începând la oră fixă, în programul 08:00–21:00;
@@ -149,7 +175,7 @@ Format RFC 7807 (`application/problem+json`) cu câmpul `code`:
 | 401 | `UNAUTHORIZED` |
 | 403 | `FORBIDDEN` |
 | 404 | `NOT_FOUND` |
-| 409 | `SLOT_ALREADY_BOOKED`, `USER_ALREADY_BOOKED`, `FACILITY_UNDER_MAINTENANCE`, `BLOCKED_BY_UNIVERSITY_ACTIVITY`, `INVALID_BOOKING_STATE` |
+| 409 | `SLOT_ALREADY_BOOKED`, `USER_ALREADY_BOOKED`, `FACILITY_UNDER_MAINTENANCE`, `BLOCKED_BY_UNIVERSITY_ACTIVITY`, `INVALID_BOOKING_STATE`, `ALREADY_ON_WAITLIST`, `SLOT_IS_FREE_BOOK_DIRECTLY`, `WAITLIST_NOT_AVAILABLE_FOR_BLOCKED_SLOT`, `SLOT_NO_LONGER_AVAILABLE`, `OFFER_EXPIRED`, `NO_ACTIVE_OFFER` |
 | 422 | `INVALID_TIME_RANGE`, `OUTSIDE_OPENING_HOURS`, `SLOT_IN_THE_PAST`, `CANCELLATION_WINDOW_EXPIRED`, `MODIFICATION_WINDOW_EXPIRED` |
 
 ## Structura
@@ -174,7 +200,7 @@ Fluxul unei cereri: **router → service → repository → model**.
 - Id-urile sunt numere întregi (în Swagger: UUID).
 - Facilitatea are `type` și `capacity` (4 culoare la bazin); intervalele din calendar au `capacity` și `freeSpots`.
 - `sports` și `amenities` sunt deduse din tipul facilității (`app/services/facility_catalog.py`).
-- Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Cota lunară (`/users/me/quota`), lista de așteptare și eliberarea anticipată nu sunt implementate încă, deci `quotaRestored` este mereu `false`, `waitlistAvailable` este `false`, iar `usesIncludedQuota` nu este returnat. QR-ul și plățile au fost scoase din proiect (la fel în Swagger-ul actualizat).
+- Statusurile rezervării sunt `confirmed`, `cancelled`, `completed`. Cota lunară (`/users/me/quota`) și eliberarea anticipată nu sunt implementate încă, deci `quotaRestored` este mereu `false`, iar `usesIncludedQuota` nu este returnat. Când se implementează cota, rezervările cu `replaced_booking_id` sunt mutări (nu consumă o rezervare în plus). Notificările se salvează în `notifications`, dar endpoint-ul `/notifications` vine cu Epic 8. Lista de așteptare nu are încă statusul intermediar `awaiting_transfer` din Swagger: acceptarea se face într-o singură tranzacție. QR-ul și plățile au fost scoase din proiect (la fel în Swagger-ul actualizat).
 - Anularea salvează motivul (`cancelReason`, max. 300 de caractere, opțional) și autorul (`cancelledBy`: `user` sau `administrator`) în coloanele `cancel_reason` și `cancelled_by` din `bookings`. `canReleaseEarly`, `replacedBookingId` și `quotaRefunded` nu sunt returnate.
 - `PATCH /users/me` modifică numele (nu există coloană pentru `mobileNumber`); `GET /users/me` nu returnează `faculty`, `department`, `campus`, `mobileNumber`.
 - Autentificare: sunt implementate doar `/auth/sso/login` și `/auth/sso/callback` (cu SSO simulat). Lipsesc `/auth/refresh`, `/auth/logout` și login-ul extern (KAN-20). Răspunsul callback-ului are în plus `redirectTo` (ruta cerută la login).

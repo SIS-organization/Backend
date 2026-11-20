@@ -41,6 +41,30 @@ class CancellationSource(str, enum.Enum):
     SYSTEM = "system"
 
 
+class WaitlistStatus(str, enum.Enum):
+    """Starea unei intrări pe lista de așteptare."""
+
+    ACTIVE = "active"  # așteaptă să se elibereze un loc
+    OFFERED = "offered"  # a primit oferta și trebuie să răspundă
+    FULFILLED = "fulfilled"  # a acceptat: rezervarea a fost creată / mutată
+    DECLINED = "declined"  # a refuzat oferta („Păstrez ora")
+    EXPIRED = "expired"  # oferta sau intervalul au expirat
+    CANCELLED = "cancelled"  # a ieșit de pe listă
+
+
+class NotificationCategory(str, enum.Enum):
+    """Categoria unei notificări (ca în Swagger)."""
+
+    BOOKING_CONFIRMATION = "booking_confirmation"
+    REMINDER = "reminder"
+    CANCELLATION = "cancellation"
+    WAITLIST_OFFER = "waitlist_offer"
+    UNIVERSITY_ACTIVITY = "university_activity"
+    MAINTENANCE = "maintenance"
+    INCIDENT_URGENT = "incident_urgent"
+    REOPENING = "reopening"
+
+
 class BlockReason(str, enum.Enum):
     """Motivul unei blocări de interval."""
 

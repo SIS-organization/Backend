@@ -101,7 +101,9 @@ def cancel_booking(
     body: CancelRequest | None = None,
 ) -> CancelResult:
     service = BookingService(db)
-    booking = service.cancel(user, booking_id, body.reason if body else None)
+    booking, notified = service.cancel(user, booking_id, body.reason if body else None)
     return CancelResult(
-        booking=service.present(booking), quota_restored=False, waitlist_notified=0
+        booking=service.present(booking),
+        quota_restored=False,
+        waitlist_notified=notified,
     )

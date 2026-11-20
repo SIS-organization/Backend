@@ -7,10 +7,14 @@ from app.models.enums import (
     BookingStatus,
     CancellationSource,
     FacilityType,
+    NotificationCategory,
     UserRole,
+    WaitlistStatus,
 )
 from app.models.facility import Facility
+from app.models.notification import Notification
 from app.models.user import User
+from app.models.waitlist_entry import WaitlistEntry
 
 __all__ = [
     "BlockReason",
@@ -20,6 +24,10 @@ __all__ = [
     "CancellationSource",
     "Facility",
     "FacilityType",
+    "Notification",
+    "NotificationCategory",
     "User",
     "UserRole",
+    "WaitlistEntry",
+    "WaitlistStatus",
 ]
